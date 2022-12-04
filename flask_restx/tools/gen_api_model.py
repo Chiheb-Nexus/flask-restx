@@ -11,45 +11,44 @@ from flask_restx.fields import (
     Float,
 )
 
-__all__ = ['gen_api_model_from_db']
+__all__ = ["gen_api_model_from_db"]
 
 
 SQLALCHEMY_TYPES = {
-    'ARRAY': Listx,
-    'INT': Integer,
-    'CHAR': String,
-    'VARCHAR': String,
-    'NCHAR': String,
-    'NVARCHAR': String,
-    'TEXT': String,
-    'Text': String,
-    'FLOAT': String,
-    'NUMERIC': String,
-    'REAL': Float,
-    'DECIMAL': Float,
-    'TIMESTAMP': Float,
-    'DATETIME': DateTime,
-    'BOOLEAN': Boolean,
-    'BIGINT': Integer,
-    'SMALLINT': Integer,
-    'INTEGER': Integer,
-    'DATE': Date,
-    'TIME': DateTime,
-    'String': String,
-    'Integer': Integer,
-    'SmallInteger': Integer,
-    'BigInteger': Integer,
-    'Numeric': Float,
-    'Float': Float,
-    'DateTime': DateTime,
-    'Date': Date,
-    'Time': DateTime,
-    'Boolean': Boolean,
-    'Unicode': String,
-    'UnicodeText': String,
-    'JSON': Raw,
+    "ARRAY": Listx,
+    "INT": Integer,
+    "CHAR": String,
+    "VARCHAR": String,
+    "NCHAR": String,
+    "NVARCHAR": String,
+    "TEXT": String,
+    "Text": String,
+    "FLOAT": String,
+    "NUMERIC": String,
+    "REAL": Float,
+    "DECIMAL": Float,
+    "TIMESTAMP": Float,
+    "DATETIME": DateTime,
+    "BOOLEAN": Boolean,
+    "BIGINT": Integer,
+    "SMALLINT": Integer,
+    "INTEGER": Integer,
+    "DATE": Date,
+    "TIME": DateTime,
+    "String": String,
+    "Integer": Integer,
+    "SmallInteger": Integer,
+    "BigInteger": Integer,
+    "Numeric": Float,
+    "Float": Float,
+    "DateTime": DateTime,
+    "Date": Date,
+    "Time": DateTime,
+    "Boolean": Boolean,
+    "Unicode": String,
+    "UnicodeText": String,
+    "JSON": Raw,
 }
-
 
 
 class Utilities:
@@ -58,24 +57,24 @@ class Utilities:
     def __init__(self, force_camel_case: bool = True):
         self.force_camel_case = force_camel_case
 
-    def to_camel_case(self, attribute_name: str, sep='_'):
+    def to_camel_case(self, attribute_name: str, sep="_"):
         """Convert attribute name separated by sep to camelCase"""
         if not self.force_camel_case:
             return attribute_name
         head, *tail = attribute_name.split(sep)
         tail_capitalized = [k.capitalize() for k in tail]
-        return ''.join([head] + tail_capitalized)
+        return "".join([head] + tail_capitalized)
 
 
 class ModelSchema(Utilities):
     """Generate API model schema from SQLAlchemy database model"""
 
     __slots__ = (
-        'api',
-        'model',
-        'fields',
-        'ignore_attributes',
-        'parents',
+        "api",
+        "model",
+        "fields",
+        "ignore_attributes",
+        "parents",
     )
 
     def __init__(
@@ -97,27 +96,28 @@ class ModelSchema(Utilities):
     def get_api_data_type(self, db_field, attribute_name):
         # type: (any, str) -> any
         """Get data type from database field"""
-        db_field_cls = SQLALCHEMY_TYPES.get(
-            db_field.type.__class__.__name__, None)
+        db_field_cls = SQLALCHEMY_TYPES.get(db_field.type.__class__.__name__, None)
         if db_field_cls is None:
             raise ValueError(
-                f'Database field type <{db_field}:{db_field.type}> is not recognized/supported')
+                f"Database field type <{db_field}:{db_field.type}> is not recognized/supported"
+            )
         try:
             return db_field_cls(attribute=attribute_name)
         except TypeError:
             return db_field_cls(
-                SQLALCHEMY_TYPES.get(db_field.type.__dict__.get(
-                    'item_type', String).__class__.__name__)
+                SQLALCHEMY_TYPES.get(
+                    db_field.type.__dict__.get("item_type", String).__class__.__name__
+                )
             )
 
     def _foreign_keys_conditon(self, model, elm, with_mapper=False):
         # type: (any, str, bool) -> bool
-        has_mapper = hasattr(getattr(model, elm), 'mapper')
+        has_mapper = hasattr(getattr(model, elm), "mapper")
         base_condition = (
-            not elm.startswith('_')
-            and not elm.endswith('_')
+            not elm.startswith("_")
+            and not elm.endswith("_")
             and elm not in self.ignore_attributes
-            and elm != 'Meta'  # Ignore Meta class
+            and elm != "Meta"  # Ignore Meta class
             # Should not be a function
             and not callable(getattr(model, elm, None))
         )
@@ -142,8 +142,8 @@ class ModelSchema(Utilities):
         """Return model Meta fields or columns fields"""
         if fields:
             return fields
-        if hasattr(model, 'Meta'):
-            if model.Meta.fields == '__all__':
+        if hasattr(model, "Meta"):
+            if model.Meta.fields == "__all__":
                 return model.__dict__
             return model.Meta.fields
         if use_columns:
@@ -181,15 +181,14 @@ class ModelSchema(Utilities):
                 self.to_camel_case(attribute): Listx(
                     Nestedx(
                         self.api.model(
-                            f'Nested{attribute.capitalize()}',
+                            f"Nested{attribute.capitalize()}",
                             ModelSchema(
                                 api=self.api,
-                                model=self.model.__dict__.get(
-                                    attribute).mapper.class_,
+                                model=self.model.__dict__.get(attribute).mapper.class_,
                                 force_camel_case=self.force_camel_case,
                                 ignore_attributes=self.ignore_attributes,
-                                parents=self.parents
-                            ).gen_api_model_from_db()
+                                parents=self.parents,
+                            ).gen_api_model_from_db(),
                         )
                     )
                 )
@@ -201,11 +200,7 @@ class ModelSchema(Utilities):
 
 
 def gen_api_model_from_db(
-    api,
-    model,
-    fields=[],
-    force_camel_case=True,
-    ignore_attributes=[]
+    api, model, fields=[], force_camel_case=True, ignore_attributes=[]
 ):
     # type: (any, any, list[str], bool, list[str]) -> dict
     """Helper function"""
@@ -215,5 +210,5 @@ def gen_api_model_from_db(
         fields=fields,
         force_camel_case=force_camel_case,
         ignore_attributes=ignore_attributes,
-        parents=[]  # Need to force the value here otherwise it'll keep track of previous func calls
+        parents=[],  # Need to force the value here otherwise it'll keep track of previous func calls
     ).gen_api_model_from_db()
