@@ -1,5 +1,4 @@
-"""Auto generate SQLAlchemy API model schema"""
-from typing import Any, List, Callable
+"""Auto generate SQLAlchemy API model schema from database table"""
 from flask_restx.fields import (
     List as Listx,
     Nested as Nestedx,
@@ -52,6 +51,7 @@ SQLALCHEMY_TYPES = {
 }
 
 
+
 class Utilities:
     """Utilities"""
 
@@ -70,60 +70,78 @@ class Utilities:
 class ModelSchema(Utilities):
     """Generate API model schema from SQLAlchemy database model"""
 
+    __slots__ = (
+        'api',
+        'model',
+        'fields',
+        'ignore_attributes',
+        'parents',
+    )
+
     def __init__(
         self,
-        api: Any,
-        model: Any,
-        force_camel_case: bool = True,
-        ignore_attributes: list = [],
-        parents: list = [],
+        api,  # type: any
+        model,  # type: any
+        fields=[],  # type: list[str]
+        force_camel_case=True,  # type: bool
+        ignore_attributes=[],  # type: list[str]
+        parents=[],  # type: list[any]
     ):
         super().__init__(force_camel_case)
         self.api = api
         self.model = model
+        self.fields = fields
         self.ignore_attributes = ignore_attributes
         self.parents = parents
 
-    # FIXME: Should add the right type of db_field
-    def get_api_data_type(self, db_field: Any, attribute_name: str) -> Any:
+    def get_api_data_type(self, db_field, attribute_name):
+        # type: (any, str) -> any
         """Get data type from database field"""
-        db_field_cls = SQLALCHEMY_TYPES.get(db_field.type.__class__.__name__, None)
+        db_field_cls = SQLALCHEMY_TYPES.get(
+            db_field.type.__class__.__name__, None)
         if db_field_cls is None:
-            raise ValueError(f'db_field type <{db_field}:{db_field.type}> is not recognized')
+            raise ValueError(
+                f'Database field type <{db_field}:{db_field.type}> is not recognized/supported')
         try:
             return db_field_cls(attribute=attribute_name)
         except TypeError:
             return db_field_cls(
-                SQLALCHEMY_TYPES.get(db_field.type.__dict__.get('item_type', String).__class__.__name__)
+                SQLALCHEMY_TYPES.get(db_field.type.__dict__.get(
+                    'item_type', String).__class__.__name__)
             )
-    
-    def _foreign_keys_conditon(self, model: Any, elm: str, with_mapper: bool = False):
+
+    def _foreign_keys_conditon(self, model, elm, with_mapper=False):
+        # type: (any, str, bool) -> bool
         has_mapper = hasattr(getattr(model, elm), 'mapper')
         base_condition = (
             not elm.startswith('_')
             and not elm.endswith('_')
             and elm not in self.ignore_attributes
             and elm != 'Meta'  # Ignore Meta class
-            and not isinstance(
-                getattr(model, elm, None), Callable
-            ) # Should not be a function
+            # Should not be a function
+            and not callable(getattr(model, elm, None))
         )
         if not with_mapper:
             return base_condition and not has_mapper
         if has_mapper and getattr(model, elm).mapper.class_ in self.parents:
             return False
         return base_condition and has_mapper
-    
-    def attrs_without_foreign_keys_condition(self, model: Any, elm: str):
+
+    def attrs_without_foreign_keys_condition(self, model, elm):
+        # type: (any, str) -> bool
         """Return database model attributes without foreign keys"""
         return self._foreign_keys_conditon(model, elm)
-    
-    def attrs_with_foreign_keys_condition(self, model: Any, elm: str):
+
+    def attrs_with_foreign_keys_condition(self, model, elm):
+        # type: (any, str) -> bool
         """Return database model attributes with only foreign keys"""
         return self._foreign_keys_conditon(model, elm, with_mapper=True)
-    
-    def get_model_fields(self, model: Any, use_columns: bool = False):
+
+    def get_model_fields(self, model, fields=[], use_columns=False):
+        # type: (any, list[str], bool) -> tuple | list
         """Return model Meta fields or columns fields"""
+        if fields:
+            return fields
         if hasattr(model, 'Meta'):
             if model.Meta.fields == '__all__':
                 return model.__dict__
@@ -131,56 +149,70 @@ class ModelSchema(Utilities):
         if use_columns:
             return model.__table__.columns.keys()
         return model.__dict__
-    
+
     def gen_api_model_from_db(self):
+        # type: () -> dict
         """Gen API model from DB"""
         self.parents.append(self.model)
-        attributes: List[str] = [
+        attributes = [
             k
-            for k in self.get_model_fields(self.model, use_columns=True)
+            for k in self.get_model_fields(self.model, self.fields, use_columns=True)
             if self.attrs_without_foreign_keys_condition(self.model, k)
-        ]
-        mappers: List[str] = [
-            k
-            for k in self.get_model_fields(self.model)
-            if self.attrs_with_foreign_keys_condition(self.model, k)
-        ]
+        ]  # type: list[str]
+
+        # For Nested mappings it's recommended to use a proper Meta class for each database model object
+        # Like this you can keep track and handle each model fields easly; better than using a default fields
+        if not self.fields:
+            mappers = [
+                k
+                for k in self.get_model_fields(self.model)
+                if self.attrs_with_foreign_keys_condition(self.model, k)
+            ]  # type: list[str | None]
+        else:
+            mappers = []  # type: list[str | None]
         simple_mappings = {
             self.to_camel_case(attribute): self.get_api_data_type(
                 self.model.__dict__.get(attribute), attribute
             )
             for attribute in attributes
         }
-        nested = {
-            self.to_camel_case(attribute): Listx(
-                Nestedx(
-                    self.api.model(
-                        f'Nested{attribute.capitalize()}',
-                        ModelSchema(
-                            api=self.api,
-                            model=self.model.__dict__.get(attribute).mapper.class_,
-                            force_camel_case=self.force_camel_case,
-                            ignore_attributes=self.ignore_attributes,
-                            parents=self.parents
-                        ).gen_api_model_from_db()
+        if not self.fields:
+            nested = {
+                self.to_camel_case(attribute): Listx(
+                    Nestedx(
+                        self.api.model(
+                            f'Nested{attribute.capitalize()}',
+                            ModelSchema(
+                                api=self.api,
+                                model=self.model.__dict__.get(
+                                    attribute).mapper.class_,
+                                force_camel_case=self.force_camel_case,
+                                ignore_attributes=self.ignore_attributes,
+                                parents=self.parents
+                            ).gen_api_model_from_db()
+                        )
                     )
                 )
-            )
-            for attribute in mappers
-        }
+                for attribute in mappers
+            }  # type: dict
+        else:
+            nested = {}  # type: dict
         return {**simple_mappings, **nested}
 
 
 def gen_api_model_from_db(
-    api: Any,
-    model: Any,
-    force_camel_case: bool = True,
-    ignore_attributes: List[str] = []
+    api,
+    model,
+    fields=[],
+    force_camel_case=True,
+    ignore_attributes=[]
 ):
+    # type: (any, any, list[str], bool, list[str]) -> dict
     """Helper function"""
     return ModelSchema(
         api=api,
         model=model,
+        fields=fields,
         force_camel_case=force_camel_case,
         ignore_attributes=ignore_attributes,
         parents=[]  # Need to force the value here otherwise it'll keep track of previous func calls
