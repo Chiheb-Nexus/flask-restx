@@ -25,6 +25,126 @@ Releases prior to 0.3.0 were “best effort” filled out, but are missing
 some info. If you see your contribution missing info, please open a PR
 on the Changelog!
 
+.. _section-1.3.3:
+1.3.3
+-----
+.. _enhancements-1.3.3
+Enhancements
+~~~~~~~~~~~~
+
+::
+
+   * Drop support for Python 3.9 (EOL); require Python 3.10 or newer. [python-restx]
+   * Declare and test support for Python 3.13 and 3.14 (CPython). [python-restx]
+   * Expand GitHub Actions and tox coverage: PyPy 3.11 with both Flask 2.x and Flask 3.x; exclude Flask 2 on 3.13/3.14 where unsupported. [python-restx]
+   * Refresh test and release tooling (pytest, pytest-benchmark, pytest-profiling, twine) for newer interpreters. GitHub Actions pre-installs compatible ``rpds-py`` (and ``readme-renderer`` for PyPy 3.11) for PyPy jobs; tox pins ``rpds-py`` for local PyPy envs. [python-restx]
+
+.. _bug_fixes-1.3.3
+Bug Fixes
+~~~~~~~~~
+
+::
+
+   * Adjust field tests for Python 3.14 (``staticmethod`` around ``functools.partial`` used as a class attribute). [python-restx]
+
+.. _section-1.3.1:
+1.3.1
+-----
+.. _bug_fixes-1.3.1
+Bug Fixes
+~~~~~~~~~
+
+::
+
+   * Add python version requirement on setup.py (#586) [jason-the-j]
+   * Add a thread lock to avoid concurrent schema construction. (#545) [peter-doggart]
+   * Fix Nested field schema generation for nullable fields. (#638) [peter-doggart]
+   * Fix reference resolution for definitions in schema. (#553) [peter-doggart]
+
+.. _section-1.3.0:
+1.3.0
+-----
+.. _bug_fixes-1.3.0
+Bug Fixes
+~~~~~~~~~
+
+::
+
+   * Fixing werkzeug 3 deprecated version import. Import is replaced by new style version check with importlib (#573) [Ryu-CZ]
+   * Fixing flask 3.0+ compatibility of `ModuleNotFoundError: No module named 'flask.scaffold'` Import error. (#567) [Ryu-CZ]
+   * Fix wrong status code and message on responses when handling `HTTPExceptions` (#569) [lkk7]
+   * Add flask 2 and flask 3 to testing matrix. [foarsitter]
+   * Update internally pinned pytest-flask to 1.3.0 for Flask >=3.0.0 support. [peter-doggart]
+   * Python 3.12 support. [foarsitter]
+   * Fix wrong status code and message on responses when handling HTTPExceptions. [ikk7]
+   * Update changelog Flask version table. [peter-doggart]
+   * Remove temporary package version restrictions for flask < 3.0.0, werkzeug and jsonschema (jsonschema future deprecation warning remains. See #553). [peter-doggart]
+
+.. _section-1.2.0:
+1.2.0
+-----
+.. _bug_fixes-1.2.0
+Bug Fixes
+~~~~~~~~~
+
+::
+
+   * Fixing test as HTTP Header MIMEAccept expects quality-factor number in form of `X.X` (#547) [chipndell]
+   * Introduce temporary restrictions on some package versions. (`flask<3.0.0`, `werkzeug<3.0.0`, `jsonschema<=4.17.3`) [peter-doggart]
+
+
+.. _enhancements-1.2.0:
+
+Enhancements
+~~~~~~~~~~~~
+
+::
+
+   * Drop support for python 3.7
+
+
+.. _section-1.1.0:
+1.1.0
+-----
+
+.. _bug_fixes-1.1.0
+Bug Fixes
+~~~~~~~~~
+
+::
+
+   * Update Swagger-UI to latest version to fix several security vulnerabiltiies. [peter-doggart]
+   * Add a warning to the docs that nested Blueprints are not supported. [peter-doggart]
+   * Add a note to the docs that flask-restx always registers the root (/) path. [peter-doggart]
+
+.. _section-1.0.6:
+1.0.6
+-----
+
+.. _bug_fixes-1.0.6
+Bug Fixes
+~~~~~~~~~
+
+::
+
+   * Update Black to 2023 version [peter-doggart]
+   * Fix minor bug introduced in 1.0.5 that changed the behaviour of how flask-restx propagates exceptions. (#512) [peter-doggart]
+   * Update PyPi classifer to Production/Stable. [peter-doggart]
+   * Add support for Python 3.11 (requires update to invoke ^2.0.0) [peter-doggart]
+
+.. _section-1.0.5:
+1.0.5
+-----
+
+.. _bug_fixes-1.0.5
+Bug Fixes
+~~~~~~~~~
+
+::
+
+   * Fix failing pypy python setup in github actions
+   * Fix compatibility with upcoming release of Flask 2.3+. (#485) [jdieter]
+
 .. _section-1.0.2:
 1.0.2
 -----

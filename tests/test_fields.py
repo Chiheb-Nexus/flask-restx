@@ -1,9 +1,13 @@
+try:
+    import zoneinfo
+except ImportError:
+    from backports import zoneinfo
+
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from functools import partial
 
-import pytz
 import pytest
 
 from flask import Blueprint
@@ -538,11 +542,11 @@ class DatetimeFieldTest(BaseFieldTestMixin, FieldTestCase):
             (datetime(2011, 1, 1), "Sat, 01 Jan 2011 00:00:00 -0000"),
             (datetime(2011, 1, 1, 23, 59, 59), "Sat, 01 Jan 2011 23:59:59 -0000"),
             (
-                datetime(2011, 1, 1, 23, 59, 59, tzinfo=pytz.utc),
+                datetime(2011, 1, 1, 23, 59, 59, tzinfo=timezone.utc),
                 "Sat, 01 Jan 2011 23:59:59 -0000",
             ),
             (
-                datetime(2011, 1, 1, 23, 59, 59, tzinfo=pytz.timezone("CET")),
+                datetime(2011, 1, 1, 23, 59, 59, tzinfo=zoneinfo.ZoneInfo("CET")),
                 "Sat, 01 Jan 2011 22:59:59 -0000",
             ),
         ],
@@ -558,15 +562,15 @@ class DatetimeFieldTest(BaseFieldTestMixin, FieldTestCase):
             (datetime(2011, 1, 1, 23, 59, 59), "2011-01-01T23:59:59"),
             (datetime(2011, 1, 1, 23, 59, 59, 1000), "2011-01-01T23:59:59.001000"),
             (
-                datetime(2011, 1, 1, 23, 59, 59, tzinfo=pytz.utc),
+                datetime(2011, 1, 1, 23, 59, 59, tzinfo=timezone.utc),
                 "2011-01-01T23:59:59+00:00",
             ),
             (
-                datetime(2011, 1, 1, 23, 59, 59, 1000, tzinfo=pytz.utc),
+                datetime(2011, 1, 1, 23, 59, 59, 1000, tzinfo=timezone.utc),
                 "2011-01-01T23:59:59.001000+00:00",
             ),
             (
-                datetime(2011, 1, 1, 23, 59, 59, tzinfo=pytz.timezone("CET")),
+                datetime(2011, 1, 1, 23, 59, 59, tzinfo=zoneinfo.ZoneInfo("CET")),
                 "2011-01-01T23:59:59+01:00",
             ),
         ],
@@ -673,10 +677,10 @@ class DateFieldTest(BaseFieldTestMixin, FieldTestCase):
             (datetime(2011, 1, 1), "2011-01-01"),
             (datetime(2011, 1, 1, 23, 59, 59), "2011-01-01"),
             (datetime(2011, 1, 1, 23, 59, 59, 1000), "2011-01-01"),
-            (datetime(2011, 1, 1, 23, 59, 59, tzinfo=pytz.utc), "2011-01-01"),
-            (datetime(2011, 1, 1, 23, 59, 59, 1000, tzinfo=pytz.utc), "2011-01-01"),
+            (datetime(2011, 1, 1, 23, 59, 59, tzinfo=timezone.utc), "2011-01-01"),
+            (datetime(2011, 1, 1, 23, 59, 59, 1000, tzinfo=timezone.utc), "2011-01-01"),
             (
-                datetime(2011, 1, 1, 23, 59, 59, tzinfo=pytz.timezone("CET")),
+                datetime(2011, 1, 1, 23, 59, 59, tzinfo=zoneinfo.ZoneInfo("CET")),
                 "2011-01-01",
             ),
         ],
@@ -689,7 +693,7 @@ class DateFieldTest(BaseFieldTestMixin, FieldTestCase):
 
 
 class FormatedStringFieldTest(StringTestMixin, BaseFieldTestMixin, FieldTestCase):
-    field_class = partial(fields.FormattedString, "Hello {name}")
+    field_class = staticmethod(partial(fields.FormattedString, "Hello {name}"))
 
     def test_defaults(self):
         field = fields.FormattedString("Hello {name}")
@@ -727,7 +731,7 @@ class FormatedStringFieldTest(StringTestMixin, BaseFieldTestMixin, FieldTestCase
 
 
 class UrlFieldTest(StringTestMixin, BaseFieldTestMixin, FieldTestCase):
-    field_class = partial(fields.Url, "endpoint")
+    field_class = staticmethod(partial(fields.Url, "endpoint"))
 
     def test_defaults(self):
         field = fields.Url("endpoint")
@@ -877,6 +881,17 @@ class NestedFieldTest(FieldTestCase):
         assert field.allow_null
         assert field.__schema__ == {"$ref": "#/definitions/NestedModel"}
 
+    def test_with_nullable_schema(self, api):
+        nested_fields = api.model("NestedModel", {"name": fields.String})
+        field = fields.Nested(nested_fields, nullable=True)
+        # Should allow null in schema via anyOf
+        assert field.__schema__ == {
+            "anyOf": [
+                {"$ref": "#/definitions/NestedModel"},
+                {"type": "null"},
+            ]
+        }
+
     def test_with_skip_none(self, api):
         nested_fields = api.model("NestedModel", {"name": fields.String})
         field = fields.Nested(nested_fields, skip_none=True)
@@ -916,7 +931,7 @@ class NestedFieldTest(FieldTestCase):
 
 
 class ListFieldTest(BaseFieldTestMixin, FieldTestCase):
-    field_class = partial(fields.List, fields.String)
+    field_class = staticmethod(partial(fields.List, fields.String))
 
     def test_defaults(self):
         field = fields.List(fields.String)
@@ -1010,7 +1025,7 @@ class ListFieldTest(BaseFieldTestMixin, FieldTestCase):
 
 
 class WildcardFieldTest(BaseFieldTestMixin, FieldTestCase):
-    field_class = partial(fields.Wildcard, fields.String)
+    field_class = staticmethod(partial(fields.Wildcard, fields.String))
 
     def test_types(self):
         with pytest.raises(fields.MarshallingError):

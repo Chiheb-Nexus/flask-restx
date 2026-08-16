@@ -2,6 +2,7 @@ import difflib
 import inspect
 from itertools import chain
 import logging
+import threading
 import operator
 import re
 import sys
@@ -14,13 +15,9 @@ from types import MethodType
 from flask import url_for, request, current_app
 from flask import make_response as original_flask_make_response
 
-try:
-    from flask.helpers import _endpoint_from_view_func
-except ImportError:
-    from flask.scaffold import _endpoint_from_view_func
 from flask.signals import got_request_exception
 
-from jsonschema import RefResolver
+from referencing import Registry
 
 from werkzeug.utils import cached_property
 from werkzeug.datastructures import Headers
@@ -32,22 +29,24 @@ from werkzeug.exceptions import (
     InternalServerError,
 )
 
-from werkzeug import __version__ as werkzeug_version
-
-if werkzeug_version.split(".")[0] >= "2":
-    from werkzeug.wrappers import Response as BaseResponse
-else:
-    from werkzeug.wrappers import BaseResponse
-
 from . import apidoc
 from .mask import ParseError, MaskError
 from .namespace import Namespace
 from .postman import PostmanCollectionV1
 from .resource import Resource
 from .swagger import Swagger
-from .utils import default_id, camel_to_dash, unpack
+from .utils import (
+    default_id,
+    camel_to_dash,
+    unpack,
+    import_check_view_func,
+    BaseResponse,
+)
 from .representations import output_json
 from ._http import HTTPStatus
+
+endpoint_from_view_func = import_check_view_func()
+
 
 RE_RULES = re.compile("(<.*>)")
 
@@ -135,7 +134,7 @@ class Api(object):
         format_checker=None,
         url_scheme=None,
         default_swagger_filename="swagger.json",
-        **kwargs
+        **kwargs,
     ):
         self.version = version
         self.title = title or "API"
@@ -163,6 +162,7 @@ class Api(object):
             }
         )
         self._schema = None
+        self._schema_lock = threading.Lock()
         self.models = {}
         self._refresolver = None
         self.format_checker = format_checker
@@ -229,6 +229,8 @@ class Api(object):
         self.license_url = kwargs.get("license_url", self.license_url)
         self.url_scheme = kwargs.get("url_scheme", self.url_scheme)
         self._add_specs = kwargs.get("add_specs", True)
+        self._register_specs(app)
+        self._register_doc(app)
 
         # If app is a blueprint, defer the initialization
         try:
@@ -245,9 +247,6 @@ class Api(object):
 
         :param flask.Flask app: The flask application object
         """
-        self._register_specs(self.blueprint or app)
-        self._register_doc(self.blueprint or app)
-
         app.handle_exception = partial(self.error_router, app.handle_exception)
         app.handle_user_exception = partial(
             self.error_router, app.handle_user_exception
@@ -570,14 +569,17 @@ class Api(object):
         :returns dict: the schema as a serializable dict
         """
         if not self._schema:
-            try:
-                self._schema = Swagger(self).as_dict()
-            except Exception:
-                # Log the source exception for debugging purpose
-                # and return an error message
-                msg = "Unable to render schema"
-                log.exception(msg)  # This will provide a full traceback
-                return {"error": msg}
+            # Guard schema initialization to avoid concurrent construction on first access
+            with self._schema_lock:
+                if not self._schema:
+                    try:
+                        self._schema = Swagger(self).as_dict()
+                    except Exception:
+                        # Log the source exception for debugging purpose
+                        # and return an error message
+                        msg = "Unable to render schema"
+                        log.exception(msg)  # This will provide a full traceback
+                        return {"error": msg}
         return self._schema
 
     @property
@@ -674,6 +676,18 @@ class Api(object):
                 return original_handler(f)
         return original_handler(e)
 
+    def _propagate_exceptions(self):
+        """
+        Returns the value of the ``PROPAGATE_EXCEPTIONS`` configuration
+        value in case it's set, otherwise return true if app.debug or
+        app.testing is set. This method was deprecated in Flask 2.3 but
+        we still need it for our error handlers.
+        """
+        rv = current_app.config.get("PROPAGATE_EXCEPTIONS")
+        if rv is not None:
+            return rv
+        return current_app.testing or current_app.debug
+
     def handle_error(self, e):
         """
         Error handler for the API transforms a raised exception into a Flask response,
@@ -686,10 +700,9 @@ class Api(object):
         # client if a handler is configured for the exception.
         if (
             not isinstance(e, HTTPException)
-            and current_app.propagate_exceptions
+            and self._propagate_exceptions()
             and not isinstance(e, tuple(self._own_and_child_error_handlers.keys()))
         ):
-
             exc_type, exc_value, tb = sys.exc_info()
             if exc_value is e:
                 raise
@@ -716,9 +729,13 @@ class Api(object):
             got_request_exception.send(current_app._get_current_object(), exception=e)
 
             if isinstance(e, HTTPException):
-                code = HTTPStatus(e.code)
+                code = None
+                if e.code is not None:
+                    code = HTTPStatus(e.code)
+                elif e.response is not None:
+                    code = HTTPStatus(e.response.status_code)
                 if include_message_in_response:
-                    default_data = {"message": getattr(e, "description", code.phrase)}
+                    default_data = {"message": e.description or code.phrase}
                 headers = e.get_response().headers
             elif self._default_error_handler:
                 result = self._default_error_handler(e)
@@ -813,7 +830,44 @@ class Api(object):
     @property
     def refresolver(self):
         if not self._refresolver:
-            self._refresolver = RefResolver.from_schema(self.__schema__)
+            # Create a registry that can resolve references within our schema
+            registry = Registry()
+            schema = self.__schema__
+
+            # If schema has definitions, register it
+            if "definitions" in schema:
+                schema_id = schema.get("$id", "http://localhost/schema.json")
+                registry = registry.with_resource(schema_id, schema)
+            else:
+                # If no definitions in schema, register all models individually
+                for name, model in self.models.items():
+                    model_schema = model.__schema__
+                    # Add $id to the model schema so it can be referenced
+                    if "$id" not in model_schema:
+                        model_schema = model_schema.copy()
+                        model_schema["$id"] = (
+                            f"http://localhost/schema.json#/definitions/{name}"
+                        )
+                    registry = registry.with_resource(
+                        f"http://localhost/schema.json#/definitions/{name}",
+                        model_schema,
+                    )
+
+                # Also register the root schema with definitions
+                if self.models:
+                    definitions = {}
+                    for name, model in self.models.items():
+                        definitions[name] = model.__schema__
+
+                    schema_with_definitions = {
+                        "$id": "http://localhost/schema.json",
+                        "definitions": definitions,
+                    }
+                    registry = registry.with_resource(
+                        "http://localhost/schema.json", schema_with_definitions
+                    )
+
+            self._refresolver = registry
         return self._refresolver
 
     @staticmethod
@@ -840,7 +894,7 @@ class Api(object):
             rule = blueprint_setup.url_prefix + rule
         options.setdefault("subdomain", blueprint_setup.subdomain)
         if endpoint is None:
-            endpoint = _endpoint_from_view_func(view_func)
+            endpoint = endpoint_from_view_func(view_func)
         defaults = blueprint_setup.url_defaults
         if "defaults" in options:
             defaults = dict(defaults, **options.pop("defaults"))
@@ -849,7 +903,7 @@ class Api(object):
             "%s.%s" % (blueprint_setup.blueprint.name, endpoint),
             view_func,
             defaults=defaults,
-            **options
+            **options,
         )
 
     def _deferred_blueprint_init(self, setup_state):

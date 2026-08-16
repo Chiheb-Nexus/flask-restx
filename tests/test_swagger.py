@@ -1451,23 +1451,17 @@ class SwaggerTest(object):
 
         description = lambda m: data["paths"]["/description/"][m]["description"]  # noqa
 
-        assert description("get") == dedent(
-            """\
+        assert description("get") == dedent("""\
             Parent description.
-            Some details"""
-        )
+            Some details""")
 
-        assert description("post") == dedent(
-            """\
+        assert description("post") == dedent("""\
             Parent description.
-            Extra description"""
-        )
+            Extra description""")
 
-        assert description("delete") == dedent(
-            """\
+        assert description("delete") == dedent("""\
             Parent description.
-            A delete operation"""
-        )
+            A delete operation""")
 
         assert description("put") == "Parent description."
         assert "description" not in data["paths"]["/descriptionless/"]["get"]
@@ -2197,6 +2191,7 @@ class SwaggerTest(object):
         This tests that the swagger.json document will not be written with duplicate object keys
         due to the coercion of dict keys to string. The last @api.response should win.
         """
+
         # Note the use of a strings '404' and '200' in class decorators as opposed to ints in method decorators.
         @api.response("404", "Not Found")
         class BaseResource(restx.Resource):
